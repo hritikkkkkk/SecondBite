@@ -14,7 +14,125 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      profiles: {
+        Row: {
+          created_at: string
+          email: string | null
+          full_name: string | null
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id: string
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          full_name?: string | null
+          id?: string
+        }
+        Relationships: []
+      }
+      restaurants: {
+        Row: {
+          address: string | null
+          created_at: string
+          cuisine: string | null
+          id: string
+          logo_url: string | null
+          name: string
+          opening_hours: string | null
+          owner_id: string
+          phone: string | null
+          qr_color: string | null
+          qr_frame_text: string | null
+          reward_text: string | null
+          slug: string
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string
+          cuisine?: string | null
+          id?: string
+          logo_url?: string | null
+          name: string
+          opening_hours?: string | null
+          owner_id: string
+          phone?: string | null
+          qr_color?: string | null
+          qr_frame_text?: string | null
+          reward_text?: string | null
+          slug: string
+        }
+        Update: {
+          address?: string | null
+          created_at?: string
+          cuisine?: string | null
+          id?: string
+          logo_url?: string | null
+          name?: string
+          opening_hours?: string | null
+          owner_id?: string
+          phone?: string | null
+          qr_color?: string | null
+          qr_frame_text?: string | null
+          reward_text?: string | null
+          slug?: string
+        }
+        Relationships: []
+      }
+      reviews: {
+        Row: {
+          comment: string | null
+          created_at: string
+          id: string
+          rating_ambience: number
+          rating_food: number
+          rating_service: number
+          restaurant_id: string
+          reward_code: string
+          reward_redeemed: boolean
+          reward_redeemed_at: string | null
+          tags: string[]
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          rating_ambience: number
+          rating_food: number
+          rating_service: number
+          restaurant_id: string
+          reward_code: string
+          reward_redeemed?: boolean
+          reward_redeemed_at?: string | null
+          tags?: string[]
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          rating_ambience?: number
+          rating_food?: number
+          rating_service?: number
+          restaurant_id?: string
+          reward_code?: string
+          reward_redeemed?: boolean
+          reward_redeemed_at?: string | null
+          tags?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reviews_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
