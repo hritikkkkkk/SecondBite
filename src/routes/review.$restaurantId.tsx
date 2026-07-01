@@ -30,11 +30,11 @@ function ReviewPage() {
 
   useEffect(() => {
     supabase
-      .from("restaurants")
+      .from("restaurants_public" as never)
       .select("id, name, cuisine, reward_text")
       .eq("slug", restaurantId)
       .maybeSingle()
-      .then(({ data }) => {
+      .then(({ data }: { data: any }) => {
         if (!data) setNotFound(true);
         else setRestaurant({ name: data.name, cuisine: data.cuisine, reward_text: data.reward_text });
       });
@@ -48,7 +48,7 @@ function ReviewPage() {
     setError(null);
     setSubmitting(true);
     // Look up restaurant id (uuid) from slug
-    const { data: r } = await supabase.from("restaurants").select("id, reward_text").eq("slug", restaurantId).maybeSingle();
+    const { data: r } = await (supabase.from("restaurants_public" as never).select("id, reward_text").eq("slug", restaurantId).maybeSingle() as any);
     if (!r) { setSubmitting(false); setError("Restaurant not found."); return; }
     const code = generateRewardCode();
     const { error } = await supabase.from("reviews").insert({

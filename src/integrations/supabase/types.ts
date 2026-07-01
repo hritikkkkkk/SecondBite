@@ -131,11 +131,59 @@ export type Database = {
             referencedRelation: "restaurants"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "reviews_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants_public"
+            referencedColumns: ["id"]
+          },
         ]
       }
     }
     Views: {
-      [_ in never]: never
+      restaurants_public: {
+        Row: {
+          address: string | null
+          created_at: string | null
+          cuisine: string | null
+          id: string | null
+          logo_url: string | null
+          name: string | null
+          opening_hours: string | null
+          qr_color: string | null
+          qr_frame_text: string | null
+          reward_text: string | null
+          slug: string | null
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string | null
+          cuisine?: string | null
+          id?: string | null
+          logo_url?: string | null
+          name?: string | null
+          opening_hours?: string | null
+          qr_color?: string | null
+          qr_frame_text?: string | null
+          reward_text?: string | null
+          slug?: string | null
+        }
+        Update: {
+          address?: string | null
+          created_at?: string | null
+          cuisine?: string | null
+          id?: string | null
+          logo_url?: string | null
+          name?: string | null
+          opening_hours?: string | null
+          qr_color?: string | null
+          qr_frame_text?: string | null
+          reward_text?: string | null
+          slug?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       [_ in never]: never
