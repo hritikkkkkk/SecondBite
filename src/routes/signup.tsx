@@ -171,37 +171,18 @@ function SignupPage() {
   );
 }
 
+import { QRCodeSVG } from "qrcode.react";
+
 export function QRPreview({ value, color = "#1a1410" }: { value: string; color?: string }) {
-  // Deterministic decorative QR-style grid (not a real QR — preview only)
-  const size = 21;
-  const seed = Array.from(value).reduce((a, c) => a + c.charCodeAt(0), 0);
-  const cells: boolean[] = [];
-  let s = seed;
-  for (let i = 0; i < size * size; i++) {
-    s = (s * 9301 + 49297) % 233280;
-    cells.push(s / 233280 > 0.5);
-  }
-  const isFinder = (x: number, y: number) => {
-    const inBox = (x0: number, y0: number) => x >= x0 && x < x0 + 7 && y >= y0 && y < y0 + 7;
-    return inBox(0, 0) || inBox(size - 7, 0) || inBox(0, size - 7);
-  };
   return (
-    <svg viewBox={`0 0 ${size} ${size}`} className="mx-auto h-48 w-48">
-      <rect width={size} height={size} fill="white" />
-      {cells.map((on, i) => {
-        const x = i % size;
-        const y = Math.floor(i / size);
-        if (isFinder(x, y)) return null;
-        if (!on) return null;
-        return <rect key={i} x={x} y={y} width={1} height={1} fill={color} />;
-      })}
-      {[[0, 0], [size - 7, 0], [0, size - 7]].map(([x, y]) => (
-        <g key={`${x}-${y}`}>
-          <rect x={x} y={y} width={7} height={7} fill={color} />
-          <rect x={x + 1} y={y + 1} width={5} height={5} fill="white" />
-          <rect x={x + 2} y={y + 2} width={3} height={3} fill={color} />
-        </g>
-      ))}
-    </svg>
+    <QRCodeSVG
+      value={value}
+      size={192}
+      bgColor="#ffffff"
+      fgColor={color}
+      level="M"
+      marginSize={2}
+      className="mx-auto h-48 w-48"
+    />
   );
 }
