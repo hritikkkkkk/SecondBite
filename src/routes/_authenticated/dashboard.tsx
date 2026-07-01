@@ -137,6 +137,44 @@ function DashboardPage() {
         </div>
       </div>
 
+      {restaurant && (
+        <div className="mt-8 rounded-2xl border border-border bg-card p-6">
+          <div className="grid gap-6 md:grid-cols-[auto_1fr] md:items-center">
+            <div className="rounded-xl border border-border bg-background p-4">
+              <QRPreview value={`${typeof window !== "undefined" ? window.location.origin : ""}/review/${restaurant.slug}`} />
+            </div>
+            <div>
+              <h3 className="font-display text-lg">Your review QR</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Print it, prop it on the table, share the link — every scan lands on your feedback page.
+              </p>
+              <div className="mt-3 break-all rounded-lg bg-secondary p-3 text-xs">
+                {typeof window !== "undefined" ? window.location.origin : ""}/review/{restaurant.slug}
+              </div>
+              <div className="mt-1 text-xs text-muted-foreground">
+                Restaurant ID: <code className="font-mono">{restaurant.slug}</code>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <a
+                  href={`/review/${restaurant.slug}`}
+                  target="_blank"
+                  className="rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background"
+                >
+                  Open review page →
+                </a>
+                <button
+                  onClick={() => navigator.clipboard.writeText(`${window.location.origin}/review/${restaurant.slug}`)}
+                  className="rounded-full border border-border bg-background px-4 py-2 text-xs font-medium"
+                >
+                  Copy link
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+
       <div className="mt-10">
         <h3 className="font-display text-xl">Latest feedback</h3>
         <div className="mt-4 space-y-3">
