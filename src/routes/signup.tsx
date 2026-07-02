@@ -86,11 +86,16 @@ function SignupPage() {
         name: restName,
         cuisine,
         address,
-        phone,
         opening_hours: hours,
       })
       .select()
       .single();
+    if (!error && data && phone.trim()) {
+      await supabase.from("restaurant_contact").insert({
+        restaurant_id: data.id,
+        phone: phone.trim(),
+      });
+    }
     setBusy(false);
     if (error) {
       setError(error.message);

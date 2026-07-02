@@ -35,6 +35,42 @@ export type Database = {
         }
         Relationships: []
       }
+      restaurant_contact: {
+        Row: {
+          created_at: string
+          phone: string | null
+          restaurant_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          phone?: string | null
+          restaurant_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          phone?: string | null
+          restaurant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "restaurant_contact_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: true
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "restaurant_contact_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: true
+            referencedRelation: "restaurants_public"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       restaurants: {
         Row: {
           address: string | null
@@ -45,7 +81,6 @@ export type Database = {
           name: string
           opening_hours: string | null
           owner_id: string
-          phone: string | null
           qr_color: string | null
           qr_frame_text: string | null
           reward_text: string | null
@@ -60,7 +95,6 @@ export type Database = {
           name: string
           opening_hours?: string | null
           owner_id: string
-          phone?: string | null
           qr_color?: string | null
           qr_frame_text?: string | null
           reward_text?: string | null
@@ -75,7 +109,6 @@ export type Database = {
           name?: string
           opening_hours?: string | null
           owner_id?: string
-          phone?: string | null
           qr_color?: string | null
           qr_frame_text?: string | null
           reward_text?: string | null
