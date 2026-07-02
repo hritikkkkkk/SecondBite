@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { StarSelector } from "@/components/StarSelector";
-import { generateRewardCode } from "@/lib/auth";
+
 
 export const Route = createFileRoute("/review/$restaurantId")({
   head: () => ({ meta: [{ title: "Share your experience — SecondBite" }] }),
