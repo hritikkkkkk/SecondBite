@@ -186,7 +186,17 @@ export type Database = {
       }
     }
     Functions: {
-      [_ in never]: never
+      submit_review: {
+        Args: {
+          p_comment: string
+          p_rating_ambience: number
+          p_rating_food: number
+          p_rating_service: number
+          p_restaurant_slug: string
+          p_tags: string[]
+        }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never
