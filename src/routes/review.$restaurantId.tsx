@@ -47,22 +47,17 @@ function ReviewPage() {
     }
     setError(null);
     setSubmitting(true);
-    // Look up restaurant id (uuid) from slug
-    const { data: r } = await (supabase.from("restaurants_public" as never).select("id, reward_text").eq("slug", restaurantId).maybeSingle() as any);
-    if (!r) { setSubmitting(false); setError("Restaurant not found."); return; }
-    const code = generateRewardCode();
-    const { error } = await supabase.from("reviews").insert({
-      restaurant_id: r.id,
-      rating_food: food,
-      rating_service: service,
-      rating_ambience: ambience,
-      tags,
-      comment: comment.trim() || null,
-      reward_code: code,
+    const { data, error } = await (supabase.rpc as any)("submit_review", {
+      p_restaurant_slug: restaurantId,
+      p_rating_food: food,
+      p_rating_service: service,
+      p_rating_ambience: ambience,
+      p_tags: tags,
+      p_comment: comment.trim() || null,
     });
     setSubmitting(false);
     if (error) { setError(error.message); return; }
-    setReward(code);
+    setReward(data as string);
   }
 
   if (notFound) {
