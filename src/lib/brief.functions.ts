@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const BriefSchema = z.object({
   greeting: z.string(),
@@ -35,6 +36,7 @@ const BriefSchema = z.object({
 export type DailyBrief = z.infer<typeof BriefSchema>;
 
 export const generateDailyBrief = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
     z.object({ ownerName: z.string().optional(), restaurantName: z.string().optional() }).parse(input ?? {}),
   )
