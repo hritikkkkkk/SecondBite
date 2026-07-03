@@ -1,331 +1,300 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
-import { signOut } from "@/lib/auth";
-import { QRPreview } from "@/routes/signup";
+import { generateDailyBrief, type DailyBrief } from "@/lib/brief.functions";
+import { ArrowUpRight, Brain, MessageSquare, Star, TrendingUp, AlertTriangle, Sparkles, Clock } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
-  head: () => ({ meta: [{ title: "Dashboard — SecondBite" }] }),
+  head: () => ({ meta: [{ title: "Executive Brief — SecondBite AI" }] }),
   component: DashboardPage,
 });
 
-type Review = {
-  id: string;
-  rating_food: number;
-  rating_service: number;
-  rating_ambience: number;
-  tags: string[];
-  comment: string | null;
-  reward_code: string;
-  reward_redeemed: boolean;
-  created_at: string;
-};
-
-type Restaurant = {
-  id: string;
-  slug: string;
-  name: string;
-  cuisine: string | null;
-};
+type Restaurant = { id: string; slug: string; name: string };
 
 function DashboardPage() {
   const navigate = useNavigate();
+  const runBrief = useServerFn(generateDailyBrief);
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [loading, setLoading] = useState(true);
   const [hasOnboarded, setHasOnboarded] = useState(true);
+  const [ownerName, setOwnerName] = useState<string>("");
+  const [brief, setBrief] = useState<DailyBrief | null>(null);
+  const [briefError, setBriefError] = useState<string | null>(null);
+  const [briefLoading, setBriefLoading] = useState(true);
 
   useEffect(() => {
-    let active = true;
+    let alive = true;
     (async () => {
       const { data: u } = await supabase.auth.getUser();
       if (!u.user) return;
+      const meta = (u.user.user_metadata ?? {}) as { full_name?: string };
+      const first = (meta.full_name ?? u.user.email ?? "there").split(" ")[0].split("@")[0];
+      if (alive) setOwnerName(first);
+
       const { data: rs } = await supabase
         .from("restaurants")
-        .select("id, slug, name, cuisine")
+        .select("id, slug, name")
         .eq("owner_id", u.user.id)
-        .order("created_at", { ascending: true })
         .limit(1);
-      if (!active) return;
+      if (!alive) return;
       if (!rs || rs.length === 0) {
         setHasOnboarded(false);
-        setLoading(false);
+        setBriefLoading(false);
         return;
       }
-      const rest = rs[0];
-      setRestaurant(rest);
-      const { data: rv } = await supabase
-        .from("reviews")
-        .select("*")
-        .eq("restaurant_id", rest.id)
-        .order("created_at", { ascending: false })
-        .limit(50);
-      if (!active) return;
-      setReviews((rv as Review[]) ?? []);
-      setLoading(false);
-    })();
-    return () => { active = false; };
-  }, []);
+      setRestaurant(rs[0]);
 
-  const stats = useMemo(() => {
-    const total = reviews.length;
-    const avg = (k: keyof Review) =>
-      total ? reviews.reduce((a, r) => a + (r[k] as number), 0) / total : 0;
-    const today = reviews.filter(
-      (r) => new Date(r.created_at).toDateString() === new Date().toDateString(),
-    ).length;
-    const redeemed = reviews.filter((r) => r.reward_redeemed).length;
-    const overall = total ? (avg("rating_food") + avg("rating_service") + avg("rating_ambience")) / 3 : 0;
-    return {
-      total, today, redeemed, overall,
-      food: avg("rating_food"),
-      service: avg("rating_service"),
-      ambience: avg("rating_ambience"),
-    };
-  }, [reviews]);
+      try {
+        const b = await runBrief({ data: { ownerName: first, restaurantName: rs[0].name } });
+        if (alive) setBrief(b);
+      } catch (e) {
+        if (alive) setBriefError(e instanceof Error ? e.message : "Brief unavailable");
+      } finally {
+        if (alive) setBriefLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [runBrief]);
 
   if (!hasOnboarded) {
     return (
-      <DashShell restaurant={null}>
-        <div className="grid place-items-center py-20">
-          <div className="max-w-md text-center">
-            <h2 className="font-display text-3xl">Finish setting up your venue</h2>
-            <p className="mt-2 text-muted-foreground">We need a few details before your dashboard goes live.</p>
-            <button
-              onClick={() => navigate({ to: "/signup" })}
-              className="mt-6 rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-background"
-            >
-              Complete onboarding
-            </button>
+      <main className="mx-auto flex max-w-5xl flex-1 items-center justify-center p-8">
+        <div className="max-w-md text-center">
+          <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-amber-400 to-orange-500 text-black">
+            <Brain className="h-6 w-6" />
           </div>
+          <h2 className="mt-6 text-2xl font-semibold">Finish onboarding your venue</h2>
+          <p className="mt-2 text-sm text-white/60">
+            Your AI Copilot needs a workspace before it can start running your restaurant.
+          </p>
+          <button
+            onClick={() => navigate({ to: "/signup" })}
+            className="mt-6 rounded-full bg-white px-5 py-2.5 text-sm font-medium text-black"
+          >
+            Complete onboarding
+          </button>
         </div>
-      </DashShell>
+      </main>
     );
   }
 
   return (
-    <DashShell restaurant={restaurant}>
-      <div className="mb-8">
-        <h1 className="font-display text-3xl font-medium tracking-tight">Tonight at a glance</h1>
-        <p className="text-sm text-muted-foreground">Live signals from your guests, refreshed in real time.</p>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Overall rating" value={stats.overall.toFixed(1)} suffix="/ 5" accent />
-        <StatCard label="Reviews total" value={String(stats.total)} />
-        <StatCard label="Reviews today" value={String(stats.today)} />
-        <StatCard label="Rewards redeemed" value={String(stats.redeemed)} />
-      </div>
-
-      <div className="mt-8 grid gap-6 lg:grid-cols-3">
-        <div className="rounded-2xl border border-border bg-card p-6 lg:col-span-2">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="font-display text-lg">Category averages</h3>
-            <span className="text-xs text-muted-foreground">All time</span>
+    <main className="mx-auto w-full max-w-7xl flex-1 p-6 md:p-10">
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-white/40">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" />
+            AI Executive Brief · {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
           </div>
-          <CategoryBars food={stats.food} service={stats.service} ambience={stats.ambience} />
-        </div>
-
-        <div className="rounded-2xl border border-[oklch(0.78_0.18_70/0.5)] bg-[oklch(0.99_0.02_75)] p-6 amber-glow">
-          <div className="flex items-center gap-2">
-            <span className="grid h-6 w-6 place-items-center rounded-full gradient-amber text-[10px] font-bold text-ink">AI</span>
-            <h3 className="font-display text-lg">Insight</h3>
-          </div>
-          <p className="mt-3 text-sm leading-relaxed text-foreground">
-            {aiInsight(stats, reviews)}
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight md:text-4xl">
+            {brief?.greeting ?? (ownerName ? `Good day, ${ownerName}.` : "Good day.")}
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm text-white/60">
+            {briefLoading ? (
+              <ShimmerLine text="Your Copilot is analyzing yesterday's operations…" />
+            ) : (
+              brief?.headline ?? briefError ?? "Ready when you are."
+            )}
           </p>
         </div>
+        <Link
+          to="/copilot"
+          className="hidden items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-xs font-medium text-white/80 backdrop-blur transition hover:bg-white/[0.06] md:inline-flex"
+        >
+          <Brain className="h-3.5 w-3.5" />
+          Ask Copilot
+          <ArrowUpRight className="h-3 w-3" />
+        </Link>
       </div>
 
-      {restaurant && (
-        <div className="mt-8 rounded-2xl border border-border bg-card p-6">
-          <div className="grid gap-6 md:grid-cols-[auto_1fr] md:items-center">
-            <div className="rounded-xl border border-border bg-background p-4">
-              <QRPreview value={`${typeof window !== "undefined" ? window.location.origin : ""}/review/${restaurant.slug}`} />
-            </div>
-            <div>
-              <h3 className="font-display text-lg">Your review QR</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Print it, prop it on the table, share the link — every scan lands on your feedback page.
-              </p>
-              <div className="mt-3 break-all rounded-lg bg-secondary p-3 text-xs">
-                {typeof window !== "undefined" ? window.location.origin : ""}/review/{restaurant.slug}
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                Restaurant ID: <code className="font-mono">{restaurant.slug}</code>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <a
-                  href={`/review/${restaurant.slug}`}
-                  target="_blank"
-                  className="rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background"
-                >
-                  Open review page →
-                </a>
-                <button
-                  onClick={() => navigator.clipboard.writeText(`${window.location.origin}/review/${restaurant.slug}`)}
-                  className="rounded-full border border-border bg-background px-4 py-2 text-xs font-medium"
-                >
-                  Copy link
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-
-      <div className="mt-10">
-        <h3 className="font-display text-xl">Latest feedback</h3>
-        <div className="mt-4 space-y-3">
-          {loading && <div className="text-sm text-muted-foreground">Loading…</div>}
-          {!loading && reviews.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-border p-10 text-center">
-              <p className="font-display text-lg">No reviews yet.</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Share your QR link to start collecting:
-              </p>
-              {restaurant && (
-                <a
-                  href={`/review/${restaurant.slug}`}
-                  target="_blank"
-                  className="mt-3 inline-block rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background"
-                >
-                  Open my review page →
-                </a>
-              )}
-            </div>
-          )}
-          {reviews.slice(0, 8).map((r) => (
-            <ReviewRow key={r.id} review={r} />
-          ))}
-        </div>
+      {/* Metrics */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {briefLoading
+          ? Array.from({ length: 4 }).map((_, i) => <MetricSkeleton key={i} />)
+          : brief?.metrics.map((m) => <MetricCard key={m.label} {...m} />)}
       </div>
-    </DashShell>
-  );
-}
 
-function DashShell({ restaurant, children }: { restaurant: Restaurant | null; children: React.ReactNode }) {
-  const navigate = useNavigate();
-  return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-surface/60 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <Link to="/" className="flex items-center gap-2">
-              <div className="grid h-7 w-7 place-items-center rounded gradient-amber text-xs font-bold text-ink">S</div>
-              <span className="font-display text-lg font-semibold">SecondBite</span>
-            </Link>
-            {restaurant && (
-              <>
-                <span className="text-border">/</span>
-                <span className="text-sm text-muted-foreground">{restaurant.name}</span>
-              </>
-            )}
-          </div>
-          <div className="flex items-center gap-3">
-            {restaurant && (
-              <a
-                href={`/review/${restaurant.slug}`}
-                target="_blank"
-                className="hidden rounded-full border border-border bg-background px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground sm:inline"
-              >
-                /review/{restaurant.slug}
-              </a>
-            )}
-            <button
-              onClick={async () => { await signOut(); navigate({ to: "/" }); }}
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              Sign out
-            </button>
-          </div>
-        </div>
-      </header>
-      <main className="mx-auto max-w-7xl px-6 py-10">{children}</main>
-    </div>
-  );
-}
-
-function StatCard({ label, value, suffix, accent }: { label: string; value: string; suffix?: string; accent?: boolean }) {
-  return (
-    <div className={`rounded-2xl border p-5 ${accent ? "border-[oklch(0.78_0.18_70/0.5)] bg-[oklch(0.99_0.02_75)]" : "border-border bg-card"}`}>
-      <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className="mt-2 flex items-baseline gap-1">
-        <span className="font-display text-4xl font-medium">{value}</span>
-        {suffix && <span className="text-sm text-muted-foreground">{suffix}</span>}
-      </div>
-    </div>
-  );
-}
-
-function CategoryBars({ food, service, ambience }: { food: number; service: number; ambience: number }) {
-  const rows = [
-    ["Food", food],
-    ["Service", service],
-    ["Ambience", ambience],
-  ] as const;
-  return (
-    <div className="space-y-4">
-      {rows.map(([label, v]) => (
-        <div key={label}>
-          <div className="mb-1 flex items-baseline justify-between text-sm">
-            <span>{label}</span>
-            <span className="font-mono text-muted-foreground">{v.toFixed(1)} / 5</span>
-          </div>
-          <div className="h-2 overflow-hidden rounded-full bg-secondary">
-            <div
-              className="h-full rounded-full gradient-amber transition-all duration-700"
-              style={{ width: `${(v / 5) * 100}%` }}
-            />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ReviewRow({ review }: { review: Review }) {
-  const avg = ((review.rating_food + review.rating_service + review.rating_ambience) / 3).toFixed(1);
-  return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="font-display text-base">{avg} ★</span>
-            <span className="text-xs text-muted-foreground">
-              {new Date(review.created_at).toLocaleString()}
-            </span>
-          </div>
-          {review.comment && <p className="mt-1 text-sm">{review.comment}</p>}
-          {review.tags.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {review.tags.map((t) => (
-                <span key={t} className="rounded-full bg-secondary px-2 py-0.5 text-[11px] text-foreground">{t}</span>
-              ))}
+      {/* What should I do today */}
+      <section className="mt-10">
+        <div className="mb-4 flex items-end justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-amber-400/80">
+              <Sparkles className="h-3 w-3" />
+              What should I do today?
             </div>
+            <h2 className="mt-1 text-xl font-semibold">AI-generated action queue</h2>
+          </div>
+          <span className="text-xs text-white/40">Prioritized by revenue impact</span>
+        </div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          {briefLoading
+            ? Array.from({ length: 3 }).map((_, i) => <ActionSkeleton key={i} />)
+            : brief?.actions.map((a, i) => <ActionCard key={i} index={i + 1} {...a} />)}
+        </div>
+      </section>
+
+      {/* Forecast + Risks */}
+      <section className="mt-10 grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+        <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-6">
+          <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-white/40">
+            <TrendingUp className="h-3 w-3" />
+            Today's Forecast
+          </div>
+          {briefLoading || !brief ? (
+            <div className="mt-4 space-y-3">
+              <div className="h-12 animate-pulse rounded-lg bg-white/5" />
+              <div className="h-24 animate-pulse rounded-lg bg-white/5" />
+            </div>
+          ) : (
+            <>
+              <div className="mt-4 grid grid-cols-3 gap-6">
+                <ForecastStat label="Expected covers" value={brief.forecast.expectedCovers.toLocaleString("en-IN")} />
+                <ForecastStat label="Expected revenue" value={`₹${brief.forecast.expectedRevenueInr.toLocaleString("en-IN")}`} />
+                <ForecastStat label="Peak window" value={brief.forecast.peakWindow} icon={<Clock className="h-3 w-3" />} />
+              </div>
+              <div className="mt-6">
+                <div className="mb-1.5 flex items-center justify-between text-[11px] text-white/50">
+                  <span>Model confidence</span>
+                  <span className="font-mono">{brief.forecast.confidence}%</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-white/5">
+                  <div className="h-full rounded-full bg-gradient-to-r from-amber-400 to-orange-500 transition-all duration-700" style={{ width: `${brief.forecast.confidence}%` }} />
+                </div>
+              </div>
+            </>
           )}
         </div>
-        <div className="text-right">
-          <div className="font-mono text-xs text-muted-foreground">{review.reward_code}</div>
-          <div className={`text-[11px] ${review.reward_redeemed ? "text-[oklch(0.55_0.15_145)]" : "text-muted-foreground"}`}>
-            {review.reward_redeemed ? "Redeemed" : "Active"}
+
+        <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-6">
+          <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-white/40">
+            <AlertTriangle className="h-3 w-3" />
+            Proactive Risk Alerts
           </div>
+          <div className="mt-4 space-y-2.5">
+            {briefLoading || !brief
+              ? Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-14 animate-pulse rounded-lg bg-white/5" />)
+              : brief.risks.map((r, i) => <RiskItem key={i} {...r} />)}
+          </div>
+        </div>
+      </section>
+
+      {/* Modules teaser */}
+      <section className="mt-10">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Your AI operators</h2>
+          <span className="text-xs text-white/40">3 live · 8 rolling out</span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <ModuleCard to="/copilot" icon={<Brain />} title="Restaurant Copilot" desc="Ask anything about your restaurant. Trained on your data." live />
+          <ModuleCard to="/reviews" icon={<Star />} title="Review Intelligence" desc="AI-summarized sentiment, themes, and reply drafts." live />
+          {restaurant && (
+            <ModuleCard to="/reviews" icon={<MessageSquare />} title="Feedback Channel" desc={`/review/${restaurant.slug}`} live />
+          )}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function MetricCard({ label, value, delta, trend }: { label: string; value: string; delta: string; trend: "up" | "down" | "flat" }) {
+  const color = trend === "up" ? "text-emerald-400" : trend === "down" ? "text-rose-400" : "text-white/60";
+  return (
+    <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-5">
+      <div className="text-[11px] uppercase tracking-widest text-white/40">{label}</div>
+      <div className="mt-2 flex items-baseline gap-2">
+        <span className="text-2xl font-semibold tracking-tight">{value}</span>
+        <span className={`text-xs font-medium ${color}`}>{delta}</span>
+      </div>
+    </div>
+  );
+}
+
+function MetricSkeleton() {
+  return (
+    <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-5">
+      <div className="h-3 w-24 animate-pulse rounded bg-white/5" />
+      <div className="mt-3 h-7 w-32 animate-pulse rounded bg-white/5" />
+    </div>
+  );
+}
+
+function ActionCard({ index, title, why, impact, effort, confidence }: { index: number; title: string; why: string; impact: string; effort: "low" | "medium" | "high"; confidence: number }) {
+  const effortColor = effort === "low" ? "bg-emerald-500/10 text-emerald-300" : effort === "medium" ? "bg-amber-500/10 text-amber-300" : "bg-rose-500/10 text-rose-300";
+  return (
+    <div className="group relative overflow-hidden rounded-2xl border border-white/5 bg-gradient-to-br from-white/[0.04] to-white/[0.01] p-5 transition hover:border-amber-400/30">
+      <div className="absolute -right-4 -top-4 text-[80px] font-bold leading-none text-white/[0.03]">{String(index).padStart(2, "0")}</div>
+      <div className="relative">
+        <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-amber-400/70">
+          <Sparkles className="h-2.5 w-2.5" />
+          Action · {confidence}% confidence
+        </div>
+        <h3 className="mt-2 text-base font-semibold leading-snug">{title}</h3>
+        <p className="mt-1.5 text-sm text-white/60">{why}</p>
+        <div className="mt-4 flex items-center gap-2 border-t border-white/5 pt-3">
+          <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-white/70">{impact}</span>
+          <span className={`rounded-full px-2 py-0.5 text-[10px] ${effortColor}`}>{effort} effort</span>
+          <button className="ml-auto rounded-full bg-white/10 px-3 py-1 text-[11px] font-medium text-white transition hover:bg-white/15">Approve</button>
         </div>
       </div>
     </div>
   );
 }
 
-function aiInsight(stats: { food: number; service: number; ambience: number; total: number }, reviews: Review[]): string {
-  if (stats.total === 0) {
-    return "Once you collect a handful of reviews, AI-generated insights will appear here — flagging dishes guests love, service patterns to watch, and concrete suggestions to lift your next shift.";
-  }
-  const lowest = (["food", "service", "ambience"] as const).reduce((a, b) => (stats[a] <= stats[b] ? a : b));
-  const tagCounts: Record<string, number> = {};
-  reviews.forEach((r) => r.tags.forEach((t) => { tagCounts[t] = (tagCounts[t] ?? 0) + 1; }));
-  const topTag = Object.entries(tagCounts).sort((a, b) => b[1] - a[1])[0]?.[0];
-  return `Your ${lowest} score (${stats[lowest].toFixed(1)}) is your biggest lever right now. ${
-    topTag ? `Guests keep mentioning "${topTag}" — lean into it on social and your menu.` : ""
-  } Consider adding a second runner during peak covers to lift service speed without touching food cost.`;
+function ActionSkeleton() {
+  return (
+    <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-5">
+      <div className="h-3 w-32 animate-pulse rounded bg-white/5" />
+      <div className="mt-3 h-5 w-3/4 animate-pulse rounded bg-white/5" />
+      <div className="mt-2 h-4 w-full animate-pulse rounded bg-white/5" />
+      <div className="mt-2 h-4 w-2/3 animate-pulse rounded bg-white/5" />
+    </div>
+  );
+}
+
+function ForecastStat({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
+  return (
+    <div>
+      <div className="flex items-center gap-1 text-[11px] uppercase tracking-widest text-white/40">{icon}{label}</div>
+      <div className="mt-1.5 text-xl font-semibold tracking-tight">{value}</div>
+    </div>
+  );
+}
+
+function RiskItem({ title, detail, severity }: { title: string; detail: string; severity: "low" | "medium" | "high" }) {
+  const dot = severity === "high" ? "bg-rose-400" : severity === "medium" ? "bg-amber-400" : "bg-white/40";
+  return (
+    <div className="flex gap-3 rounded-lg border border-white/5 bg-white/[0.02] p-3">
+      <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${dot}`} />
+      <div>
+        <div className="text-sm font-medium">{title}</div>
+        <div className="mt-0.5 text-xs text-white/50">{detail}</div>
+      </div>
+    </div>
+  );
+}
+
+function ModuleCard({ to, icon, title, desc, live }: { to: string; icon: React.ReactNode; title: string; desc: string; live?: boolean }) {
+  return (
+    <Link to={to} className="group flex items-start gap-3 rounded-2xl border border-white/5 bg-white/[0.02] p-4 transition hover:border-white/15 hover:bg-white/[0.04]">
+      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-amber-400/20 to-orange-500/10 text-amber-300 [&_svg]:h-4 [&_svg]:w-4">
+        {icon}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <div className="truncate text-sm font-semibold">{title}</div>
+          {live && <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-medium text-emerald-300">LIVE</span>}
+        </div>
+        <div className="mt-0.5 truncate text-xs text-white/50">{desc}</div>
+      </div>
+      <ArrowUpRight className="h-4 w-4 text-white/30 transition group-hover:text-white" />
+    </Link>
+  );
+}
+
+function ShimmerLine({ text }: { text: string }) {
+  return (
+    <span className="inline-block bg-gradient-to-r from-white/30 via-white/80 to-white/30 bg-[length:200%_100%] bg-clip-text text-transparent [animation:shimmer_2.5s_linear_infinite]" style={{ backgroundPositionX: "200%" }}>
+      {text}
+    </span>
+  );
 }

@@ -43,40 +43,40 @@ function Hero() {
         <div className="animate-slide-up">
           <span className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-muted-foreground">
             <span className="h-1.5 w-1.5 rounded-full bg-[oklch(0.78_0.18_70)] animate-pulse-glow" />
-            Now in early access · 200+ venues
+            AI Restaurant OS · Early access · India
           </span>
           <h1 className="mt-6 font-display text-5xl font-medium leading-[0.95] tracking-tight md:text-7xl">
-            The customer experience{" "}
-            <span className="text-gradient-amber">command center</span>{" "}
-            for restaurants.
+            The AI operating system{" "}
+            <span className="text-gradient-amber">running your restaurant</span>{" "}
+            beside you.
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground">
-            SecondBite captures honest guest feedback at the table, rewards loyal diners instantly, and
-            surfaces the operational signals that drive your next great review.
+            SecondBite AI is a Chief Operating Officer for your restaurant. It analyzes covers, kitchen,
+            staff, inventory, and reviews — then tells you exactly what to do today, and does it with your approval.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Link
               to="/signup"
               className="group inline-flex items-center gap-2 rounded-full bg-foreground px-6 py-3 text-sm font-medium text-background transition hover:opacity-90"
             >
-              Start free — no card required
+              Hire your AI COO
               <svg viewBox="0 0 20 20" className="h-4 w-4 transition group-hover:translate-x-0.5" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M5 10h10M10 5l5 5-5 5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
             </Link>
             <a
-              href="#how"
+              href="#modules"
               className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-6 py-3 text-sm font-medium text-foreground transition hover:bg-secondary"
             >
-              See it in action
+              See the modules
             </a>
           </div>
           <div className="mt-10 flex items-center gap-6 text-xs text-muted-foreground">
-            <Metric value="4.9★" label="Avg dashboard rating" />
+            <Metric value="₹92K" label="Avg forecast accuracy" />
             <span className="h-8 w-px bg-border" />
-            <Metric value="38%" label="More repeat visits" />
+            <Metric value="11 AI" label="Operators, always on" />
             <span className="h-8 w-px bg-border" />
-            <Metric value="< 60s" label="To collect feedback" />
+            <Metric value="< 60s" label="Daily brief" />
           </div>
         </div>
 
