@@ -35,7 +35,7 @@ function AuthenticatedShell() {
   }, []);
 
   return (
-    <div className="dark flex min-h-screen w-full bg-[oklch(0.11_0.008_60)] text-white">
+    <div className="flex min-h-screen w-full bg-background text-foreground">
       <AppSidebar restaurantName={restaurantName} />
       <div className="flex min-h-screen flex-1 flex-col">
         <MobileTopbar restaurantName={restaurantName} />
