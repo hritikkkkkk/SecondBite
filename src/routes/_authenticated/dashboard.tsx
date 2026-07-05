@@ -2,24 +2,28 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
-import { generateDailyBrief, type DailyBrief } from "@/lib/brief.functions";
-import { ArrowUpRight, Brain, MessageSquare, Star, TrendingUp, AlertTriangle, Sparkles, Clock } from "lucide-react";
+import {
+  generateDailyBrief,
+  getRestaurantMetrics,
+  type DailyBrief,
+  type RestaurantMetrics,
+} from "@/lib/brief.functions";
+import { ArrowUpRight, Brain, MessageSquare, Star, Sparkles, Lock } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Executive Brief — SecondBite AI" }] }),
   component: DashboardPage,
 });
 
-type Restaurant = { id: string; slug: string; name: string };
-
 function DashboardPage() {
   const navigate = useNavigate();
+  const loadMetrics = useServerFn(getRestaurantMetrics);
   const runBrief = useServerFn(generateDailyBrief);
-  const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
-  const [hasOnboarded, setHasOnboarded] = useState(true);
+
   const [ownerName, setOwnerName] = useState<string>("");
+  const [metrics, setMetrics] = useState<RestaurantMetrics | null>(null);
   const [brief, setBrief] = useState<DailyBrief | null>(null);
-  const [briefError, setBriefError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [briefLoading, setBriefLoading] = useState(true);
 
   useEffect(() => {
@@ -31,32 +35,41 @@ function DashboardPage() {
       const first = (meta.full_name ?? u.user.email ?? "there").split(" ")[0].split("@")[0];
       if (alive) setOwnerName(first);
 
-      const { data: rs } = await supabase
-        .from("restaurants")
-        .select("id, slug, name")
-        .eq("owner_id", u.user.id)
-        .limit(1);
-      if (!alive) return;
-      if (!rs || rs.length === 0) {
-        setHasOnboarded(false);
-        setBriefLoading(false);
-        return;
-      }
-      setRestaurant(rs[0]);
-
       try {
-        const b = await runBrief({ data: { ownerName: first, restaurantName: rs[0].name } });
+        const m = await loadMetrics();
+        if (!alive) return;
+        setMetrics(m);
+        setLoading(false);
+
+        if (!m.hasRestaurant) {
+          setBriefLoading(false);
+          return;
+        }
+
+        const summary = m.cards
+          .map((c) => `- ${c.label}: ${c.value}${c.delta ? ` (${c.delta})` : ""} — ${c.sample}`)
+          .join("\n");
+
+        const b = await runBrief({
+          data: {
+            ownerName: first,
+            restaurantName: m.restaurantName ?? undefined,
+            metricsSummary: summary,
+            hasReviews: m.totalReviews > 0,
+          },
+        });
         if (alive) setBrief(b);
-      } catch (e) {
-        if (alive) setBriefError(e instanceof Error ? e.message : "Brief unavailable");
       } finally {
-        if (alive) setBriefLoading(false);
+        if (alive) {
+          setLoading(false);
+          setBriefLoading(false);
+        }
       }
     })();
     return () => { alive = false; };
-  }, [runBrief]);
+  }, [loadMetrics, runBrief]);
 
-  if (!hasOnboarded) {
+  if (!loading && metrics && !metrics.hasRestaurant) {
     return (
       <main className="mx-auto flex max-w-5xl flex-1 items-center justify-center p-8">
         <div className="max-w-md text-center">
@@ -91,12 +104,9 @@ function DashboardPage() {
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
             {briefLoading
-              ? "Your Copilot is analyzing yesterday's operations…"
+              ? "Your Copilot is reading your latest reviews…"
               : brief?.headline ?? "Ready when you are."}
           </p>
-          {briefError && !brief && (
-            <p className="mt-1 text-xs text-destructive">{briefError}</p>
-          )}
         </div>
         <Link
           to="/copilot"
@@ -108,110 +118,100 @@ function DashboardPage() {
         </Link>
       </div>
 
-      {/* Metrics */}
+      {/* Real metrics */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {briefLoading
+        {loading || !metrics
           ? Array.from({ length: 4 }).map((_, i) => <MetricSkeleton key={i} />)
-          : brief?.metrics.map((m) => <MetricCard key={m.label} {...m} />)}
+          : metrics.cards.map((m) => <MetricCard key={m.label} {...m} />)}
       </div>
 
-      {/* What should I do today */}
+      {/* Sub-scores */}
+      {metrics && metrics.totalReviews > 0 && (
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          {metrics.subScores.map((s) => (
+            <SubScoreBar key={s.label} label={s.label} value={s.value} sample={s.sample} />
+          ))}
+        </div>
+      )}
+
+      {/* Zero-review empty state */}
+      {metrics && metrics.totalReviews === 0 && (
+        <div className="mt-8 rounded-2xl border border-dashed border-border bg-secondary/40 p-8 text-center">
+          <div className="mx-auto grid h-10 w-10 place-items-center rounded-xl bg-amber-100 text-amber-700">
+            <Star className="h-5 w-5" />
+          </div>
+          <h3 className="mt-4 text-lg font-semibold">Awaiting your first reviews</h3>
+          <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+            All metrics on this page are computed from real guest reviews. Share your QR link at every table — the Copilot will start surfacing insights from the very first review.
+          </p>
+        </div>
+      )}
+
+      {/* Action queue */}
+      {metrics && metrics.totalReviews > 0 && (
+        <section className="mt-10">
+          <div className="mb-4 flex items-end justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-amber-700">
+                <Sparkles className="h-3 w-3" />
+                What should I do today?
+              </div>
+              <h2 className="mt-1 text-xl font-semibold">AI action queue</h2>
+            </div>
+            <span className="text-xs text-muted-foreground">Grounded in your review data only</span>
+          </div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            {briefLoading
+              ? Array.from({ length: 2 }).map((_, i) => <ActionSkeleton key={i} />)
+              : (brief?.actions ?? []).map((a, i) => <ActionCard key={i} index={i + 1} {...a} />)}
+          </div>
+          {!briefLoading && (brief?.actions?.length ?? 0) === 0 && (
+            <EmptyPanel text="No urgent actions right now — your review signal is steady." />
+          )}
+        </section>
+      )}
+
+      {/* Not-connected rail */}
       <section className="mt-10">
-        <div className="mb-4 flex items-end justify-between">
-          <div>
-            <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-amber-700">
-              <Sparkles className="h-3 w-3" />
-              What should I do today?
-            </div>
-            <h2 className="mt-1 text-xl font-semibold">AI-generated action queue</h2>
-          </div>
-          <span className="text-xs text-muted-foreground">Prioritized by revenue impact</span>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-muted-foreground">Not connected yet</h2>
+          <span className="text-xs text-muted-foreground">Metrics unlock as you connect data sources</span>
         </div>
-        <div className="grid gap-3 lg:grid-cols-2">
-          {briefLoading
-            ? Array.from({ length: 3 }).map((_, i) => <ActionSkeleton key={i} />)
-            : (brief?.actions ?? []).map((a, i) => <ActionCard key={i} index={i + 1} {...a} />)}
-        </div>
-        {!briefLoading && (brief?.actions?.length ?? 0) === 0 && (
-          <EmptyPanel text="No actions surfaced right now — your Copilot will queue new ones as data changes." />
-        )}
-      </section>
-
-      {/* Forecast + Risks */}
-      <section className="mt-10 grid gap-4 lg:grid-cols-[1.2fr_1fr]">
-        <div className="rounded-2xl border border-border bg-card p-6">
-          <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-muted-foreground">
-            <TrendingUp className="h-3 w-3" />
-            Today's Forecast
-          </div>
-          {briefLoading || !brief ? (
-            <div className="mt-4 space-y-3">
-              <div className="h-12 animate-pulse rounded-lg bg-secondary" />
-              <div className="h-24 animate-pulse rounded-lg bg-secondary" />
-            </div>
-          ) : (
-            <>
-              <div className="mt-4 grid grid-cols-3 gap-6">
-                <ForecastStat label="Expected covers" value={brief.forecast.expectedCovers.toLocaleString("en-IN")} />
-                <ForecastStat label="Expected revenue" value={`₹${brief.forecast.expectedRevenueInr.toLocaleString("en-IN")}`} />
-                <ForecastStat label="Peak window" value={brief.forecast.peakWindow} icon={<Clock className="h-3 w-3" />} />
-              </div>
-              <div className="mt-6">
-                <div className="mb-1.5 flex items-center justify-between text-[11px] text-muted-foreground">
-                  <span>Model confidence</span>
-                  <span className="font-mono">{brief.forecast.confidence}%</span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
-                  <div className="h-full rounded-full gradient-amber transition-all duration-700" style={{ width: `${brief.forecast.confidence}%` }} />
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="rounded-2xl border border-border bg-card p-6">
-          <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-muted-foreground">
-            <AlertTriangle className="h-3 w-3" />
-            Proactive Risk Alerts
-          </div>
-          <div className="mt-4 space-y-2.5">
-            {briefLoading || !brief
-              ? Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-14 animate-pulse rounded-lg bg-secondary" />)
-              : (brief.risks ?? []).map((r, i) => <RiskItem key={i} {...r} />)}
-          </div>
-          {!briefLoading && brief && (brief.risks?.length ?? 0) === 0 && (
-            <EmptyPanel text="No risks flagged. All green across kitchen, staff, and inventory." />
-          )}
+        <div className="grid gap-3 sm:grid-cols-3">
+          <NotConnectedTile title="Revenue & covers" source="Connect POS" />
+          <NotConnectedTile title="Kitchen speed" source="Connect KDS" />
+          <NotConnectedTile title="Staff performance" source="Connect roster" />
         </div>
       </section>
 
-      {/* Modules teaser */}
+      {/* Modules */}
       <section className="mt-10">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-semibold">Your AI operators</h2>
           <span className="text-xs text-muted-foreground">3 live · 8 rolling out</span>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <ModuleCard to="/copilot" icon={<Brain />} title="Restaurant Copilot" desc="Ask anything about your restaurant. Trained on your data." live />
-          <ModuleCard to="/reviews" icon={<Star />} title="Review Intelligence" desc="AI-summarized sentiment, themes, and reply drafts." live />
-          {restaurant && (
-            <ModuleCard to="/reviews" icon={<MessageSquare />} title="Feedback Channel" desc={`/review/${restaurant.slug}`} live />
-          )}
+          <ModuleCard to="/copilot" icon={<Brain />} title="Restaurant Copilot" desc="Ask anything about your restaurant." live />
+          <ModuleCard to="/reviews" icon={<Star />} title="Review Intelligence" desc="AI-summarized sentiment and themes." live />
+          <ModuleCard to="/reviews" icon={<MessageSquare />} title="Feedback Channel" desc="Your public review QR link" live />
         </div>
       </section>
     </main>
   );
 }
 
-function MetricCard({ label, value, delta, trend }: { label: string; value: string; delta: string; trend: "up" | "down" | "flat" }) {
+function MetricCard({ label, value, delta, trend, sample, empty }: {
+  label: string; value: string; delta: string | null; trend: "up" | "down" | "flat"; sample: string; empty?: boolean;
+}) {
   const color = trend === "up" ? "text-emerald-600" : trend === "down" ? "text-rose-600" : "text-muted-foreground";
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
       <div className="text-[11px] uppercase tracking-widest text-muted-foreground">{label}</div>
       <div className="mt-2 flex items-baseline gap-2">
-        <span className="text-2xl font-semibold tracking-tight">{value}</span>
-        <span className={`text-xs font-medium ${color}`}>{delta}</span>
+        <span className={`text-2xl font-semibold tracking-tight ${empty ? "text-muted-foreground" : ""}`}>{value}</span>
+        {delta && <span className={`text-xs font-medium ${color}`}>{delta}</span>}
       </div>
+      <div className="mt-2 text-[10px] uppercase tracking-wider text-muted-foreground/70">{sample}</div>
     </div>
   );
 }
@@ -221,11 +221,30 @@ function MetricSkeleton() {
     <div className="rounded-2xl border border-border bg-card p-5">
       <div className="h-3 w-24 animate-pulse rounded bg-secondary" />
       <div className="mt-3 h-7 w-32 animate-pulse rounded bg-secondary" />
+      <div className="mt-3 h-2 w-20 animate-pulse rounded bg-secondary" />
     </div>
   );
 }
 
-function ActionCard({ index, title, why, impact, effort, confidence }: { index: number; title: string; why: string; impact: string; effort: "low" | "medium" | "high"; confidence: number }) {
+function SubScoreBar({ label, value, sample }: { label: string; value: number | null; sample: number }) {
+  const pct = value === null ? 0 : (value / 5) * 100;
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-medium">{label}</span>
+        <span className="font-mono text-muted-foreground">{value === null ? "—" : value.toFixed(2)}</span>
+      </div>
+      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-secondary">
+        <div className="h-full rounded-full gradient-amber transition-all duration-700" style={{ width: `${pct}%` }} />
+      </div>
+      <div className="mt-1.5 text-[10px] uppercase tracking-wider text-muted-foreground/70">{sample} reviews · 7d</div>
+    </div>
+  );
+}
+
+function ActionCard({ index, title, why, impact, effort, confidence }: {
+  index: number; title: string; why: string; impact: string; effort: "low" | "medium" | "high"; confidence: number;
+}) {
   const effortColor = effort === "low" ? "bg-emerald-100 text-emerald-800" : effort === "medium" ? "bg-amber-100 text-amber-800" : "bg-rose-100 text-rose-800";
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-border bg-card p-5 transition hover:border-amber-500/50">
@@ -240,7 +259,6 @@ function ActionCard({ index, title, why, impact, effort, confidence }: { index: 
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-3">
           <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] text-foreground/80">{impact}</span>
           <span className={`rounded-full px-2 py-0.5 text-[10px] ${effortColor}`}>{effort} effort</span>
-          <button className="ml-auto rounded-full bg-foreground px-3 py-1 text-[11px] font-medium text-background transition hover:opacity-90">Approve</button>
         </div>
       </div>
     </div>
@@ -253,28 +271,22 @@ function ActionSkeleton() {
       <div className="h-3 w-32 animate-pulse rounded bg-secondary" />
       <div className="mt-3 h-5 w-3/4 animate-pulse rounded bg-secondary" />
       <div className="mt-2 h-4 w-full animate-pulse rounded bg-secondary" />
-      <div className="mt-2 h-4 w-2/3 animate-pulse rounded bg-secondary" />
     </div>
   );
 }
 
-function ForecastStat({ label, value, icon }: { label: string; value: string; icon?: React.ReactNode }) {
+function NotConnectedTile({ title, source }: { title: string; source: string }) {
   return (
-    <div>
-      <div className="flex items-center gap-1 text-[11px] uppercase tracking-widest text-muted-foreground">{icon}{label}</div>
-      <div className="mt-1.5 text-xl font-semibold tracking-tight">{value}</div>
-    </div>
-  );
-}
-
-function RiskItem({ title, detail, severity }: { title: string; detail: string; severity: "low" | "medium" | "high" }) {
-  const dot = severity === "high" ? "bg-rose-500" : severity === "medium" ? "bg-amber-500" : "bg-muted-foreground";
-  return (
-    <div className="flex gap-3 rounded-lg border border-border bg-background p-3">
-      <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${dot}`} />
-      <div>
-        <div className="text-sm font-medium">{title}</div>
-        <div className="mt-0.5 text-xs text-muted-foreground">{detail}</div>
+    <div className="flex items-start gap-3 rounded-xl border border-dashed border-border bg-secondary/30 p-4">
+      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-secondary text-muted-foreground">
+        <Lock className="h-3.5 w-3.5" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <div className="truncate text-sm font-medium text-muted-foreground">{title}</div>
+          <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">SOON</span>
+        </div>
+        <div className="mt-0.5 text-xs text-muted-foreground/70">{source}</div>
       </div>
     </div>
   );

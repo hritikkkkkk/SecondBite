@@ -4,26 +4,172 @@ import { z } from "zod";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+// ---------- Real metrics computed from the reviews table ----------
+
+export type MetricCard = {
+  label: string;
+  value: string;
+  delta: string | null;
+  trend: "up" | "down" | "flat";
+  sample: string; // e.g. "based on 42 reviews"
+  empty?: boolean;
+};
+
+export type RestaurantMetrics = {
+  hasRestaurant: boolean;
+  restaurantName: string | null;
+  totalReviews: number;
+  cards: MetricCard[];
+  subScores: { label: string; value: number | null; sample: number }[];
+  topComplaintTag: { tag: string; count: number } | null;
+};
+
+type ReviewRow = {
+  rating_food: number;
+  rating_service: number;
+  rating_ambience: number;
+  tags: string[] | null;
+  reward_redeemed: boolean | null;
+  created_at: string;
+};
+
+function avg(nums: number[]): number | null {
+  if (nums.length === 0) return null;
+  return nums.reduce((a, b) => a + b, 0) / nums.length;
+}
+
+function pctDelta(curr: number | null, prev: number | null): { delta: string | null; trend: "up" | "down" | "flat" } {
+  if (curr === null || prev === null || prev === 0) return { delta: null, trend: "flat" };
+  const diff = ((curr - prev) / prev) * 100;
+  if (Math.abs(diff) < 1) return { delta: "flat", trend: "flat" };
+  const arrow = diff > 0 ? "↑" : "↓";
+  return { delta: `${arrow} ${Math.abs(diff).toFixed(0)}%`, trend: diff > 0 ? "up" : "down" };
+}
+
+function absDelta(curr: number | null, prev: number | null, unit = ""): { delta: string | null; trend: "up" | "down" | "flat" } {
+  if (curr === null || prev === null) return { delta: null, trend: "flat" };
+  const diff = curr - prev;
+  if (Math.abs(diff) < 0.05) return { delta: "flat", trend: "flat" };
+  const arrow = diff > 0 ? "↑" : "↓";
+  return { delta: `${arrow} ${Math.abs(diff).toFixed(2)}${unit}`, trend: diff > 0 ? "up" : "down" };
+}
+
+export const getRestaurantMetrics = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<RestaurantMetrics> => {
+    const { supabase, userId } = context;
+
+    const { data: restaurant } = await supabase
+      .from("restaurants")
+      .select("id, name")
+      .eq("owner_id", userId)
+      .limit(1)
+      .maybeSingle();
+
+    if (!restaurant) {
+      return { hasRestaurant: false, restaurantName: null, totalReviews: 0, cards: [], subScores: [], topComplaintTag: null };
+    }
+
+    const { data: rows } = await supabase
+      .from("reviews")
+      .select("rating_food, rating_service, rating_ambience, tags, reward_redeemed, created_at")
+      .eq("restaurant_id", restaurant.id)
+      .order("created_at", { ascending: false })
+      .limit(500);
+
+    const reviews: ReviewRow[] = (rows ?? []) as ReviewRow[];
+    const now = Date.now();
+    const DAY = 86_400_000;
+
+    const in7 = reviews.filter((r) => now - new Date(r.created_at).getTime() <= 7 * DAY);
+    const prev7 = reviews.filter((r) => {
+      const age = now - new Date(r.created_at).getTime();
+      return age > 7 * DAY && age <= 14 * DAY;
+    });
+    const in30 = reviews.filter((r) => now - new Date(r.created_at).getTime() <= 30 * DAY);
+    const prev30 = reviews.filter((r) => {
+      const age = now - new Date(r.created_at).getTime();
+      return age > 30 * DAY && age <= 60 * DAY;
+    });
+    const in14 = reviews.filter((r) => now - new Date(r.created_at).getTime() <= 14 * DAY);
+
+    const overall = (r: ReviewRow) => (r.rating_food + r.rating_service + r.rating_ambience) / 3;
+    const sat7 = avg(in7.map(overall));
+    const satPrev = avg(prev7.map(overall));
+    const satDelta = absDelta(sat7, satPrev);
+
+    const cnt7 = in7.length;
+    const cntPrev = prev7.length;
+    const cntDelta = pctDelta(cnt7, cntPrev);
+
+    const redeemed30 = in30.filter((r) => r.reward_redeemed).length;
+    const redemption = in30.length > 0 ? (redeemed30 / in30.length) * 100 : null;
+    const redemptionPrev = prev30.length > 0 ? (prev30.filter((r) => r.reward_redeemed).length / prev30.length) * 100 : null;
+    const redDelta = absDelta(redemption, redemptionPrev, "pp");
+
+    // Top complaint tag from reviews rated ≤3 overall, last 14d
+    const complaints = in14.filter((r) => overall(r) <= 3);
+    const tagCounts = new Map<string, number>();
+    for (const r of complaints) for (const t of r.tags ?? []) tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1);
+    let topTag: { tag: string; count: number } | null = null;
+    for (const [tag, count] of tagCounts) if (!topTag || count > topTag.count) topTag = { tag, count };
+
+    const cards: MetricCard[] = [
+      {
+        label: "Guest Satisfaction (7d)",
+        value: sat7 === null ? "—" : `${sat7.toFixed(2)} / 5`,
+        delta: satDelta.delta,
+        trend: satDelta.trend,
+        sample: `based on ${in7.length} review${in7.length === 1 ? "" : "s"}`,
+        empty: sat7 === null,
+      },
+      {
+        label: "Reviews this week",
+        value: `${cnt7}`,
+        delta: cntDelta.delta,
+        trend: cntDelta.trend,
+        sample: `vs ${cntPrev} prior 7d`,
+        empty: cnt7 === 0 && cntPrev === 0,
+      },
+      {
+        label: "Reward Redemption (30d)",
+        value: redemption === null ? "—" : `${redemption.toFixed(0)}%`,
+        delta: redDelta.delta,
+        trend: redDelta.trend,
+        sample: `${redeemed30} of ${in30.length} redeemed`,
+        empty: redemption === null,
+      },
+      {
+        label: "Top Complaint (14d)",
+        value: topTag ? topTag.tag : "None",
+        delta: topTag ? `${topTag.count} mention${topTag.count === 1 ? "" : "s"}` : null,
+        trend: "flat",
+        sample: `${complaints.length} low-rated review${complaints.length === 1 ? "" : "s"}`,
+        empty: complaints.length === 0,
+      },
+    ];
+
+    const subScores = [
+      { label: "Food", value: avg(in7.map((r) => r.rating_food)), sample: in7.length },
+      { label: "Service", value: avg(in7.map((r) => r.rating_service)), sample: in7.length },
+      { label: "Ambience", value: avg(in7.map((r) => r.rating_ambience)), sample: in7.length },
+    ];
+
+    return {
+      hasRestaurant: true,
+      restaurantName: restaurant.name,
+      totalReviews: reviews.length,
+      cards,
+      subScores,
+      topComplaintTag: topTag,
+    };
+  });
+
+// ---------- AI headline + grounded action queue ----------
+
 const BriefSchema = z.object({
   greeting: z.string(),
   headline: z.string(),
-  metrics: z.array(z.object({
-    label: z.string(),
-    value: z.string(),
-    delta: z.string(),
-    trend: z.enum(["up", "down", "flat"]),
-  })),
-  forecast: z.object({
-    expectedCovers: z.number(),
-    expectedRevenueInr: z.number(),
-    peakWindow: z.string(),
-    confidence: z.number(),
-  }),
-  risks: z.array(z.object({
-    title: z.string(),
-    detail: z.string(),
-    severity: z.enum(["low", "medium", "high"]),
-  })),
   actions: z.array(z.object({
     title: z.string(),
     why: z.string(),
@@ -35,76 +181,63 @@ const BriefSchema = z.object({
 
 export type DailyBrief = z.infer<typeof BriefSchema>;
 
-function fallbackBrief(owner: string, restaurant: string, dayPart: string): DailyBrief {
-  return {
-    greeting: `Good ${dayPart}, ${owner}.`,
-    headline: `Here's what needs your attention at ${restaurant} today.`,
-    metrics: [
-      { label: "Revenue (yesterday)", value: "₹94,000", delta: "↑ 8%", trend: "up" },
-      { label: "Guest Satisfaction", value: "4.3 / 5", delta: "↑ 0.2", trend: "up" },
-      { label: "Kitchen Speed", value: "14 min", delta: "↓ 1m", trend: "up" },
-      { label: "Staff Performance", value: "92%", delta: "flat", trend: "flat" },
-    ],
-    forecast: { expectedCovers: 420, expectedRevenueInr: 108000, peakWindow: "7:30–9:30 PM", confidence: 82 },
-    risks: [
-      { title: "Paneer stock low", detail: "1.2 days remaining — reorder before Friday.", severity: "high" },
-      { title: "Friday FoH understaffed", detail: "2 servers short for expected 460 covers.", severity: "medium" },
-      { title: "Butter Chicken sweetness complaints", detail: "3 mentions this week — check batch recipe.", severity: "medium" },
-    ],
-    actions: [
-      { title: "Reorder paneer & tomato today", why: "Both under 1.5 days of cover.", impact: "Avoid ₹18k lost revenue", effort: "low", confidence: 90 },
-      { title: "Call 1 extra server for Friday dinner", why: "Forecast: 460 covers, current staff = 3.", impact: "Protect rating & ticket time", effort: "low", confidence: 85 },
-      { title: "Retune Butter Chicken sweetness", why: "3 negative mentions this week.", impact: "+0.2 rating in 14 days", effort: "medium", confidence: 75 },
-    ],
-  };
-}
-
 export const generateDailyBrief = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
-    z.object({ ownerName: z.string().optional(), restaurantName: z.string().optional() }).parse(input ?? {}),
+    z.object({
+      ownerName: z.string().optional(),
+      restaurantName: z.string().optional(),
+      metricsSummary: z.string(),
+      hasReviews: z.boolean(),
+    }).parse(input),
   )
   .handler(async ({ data }): Promise<DailyBrief> => {
     const owner = data.ownerName ?? "there";
-    const restaurant = data.restaurantName ?? "your restaurant";
     const hourIST = new Date(Date.now() + 5.5 * 3600 * 1000).getUTCHours();
     const dayPart = hourIST < 12 ? "morning" : hourIST < 17 ? "afternoon" : "evening";
+    const greeting = `Good ${dayPart}, ${owner}.`;
+
+    const neutral: DailyBrief = {
+      greeting,
+      headline: data.hasReviews
+        ? "Here's what your review signal says today."
+        : "No reviews yet — share your QR to start collecting real signal.",
+      actions: [],
+    };
 
     const key = process.env.LOVABLE_API_KEY;
-    if (!key) return fallbackBrief(owner, restaurant, dayPart);
+    if (!key || !data.hasReviews) return neutral;
+
     const gateway = createLovableAiGatewayProvider(key);
 
     try {
       const { output } = await generateText({
         model: gateway("google/gemini-3-flash-preview"),
         output: Output.object({ schema: BriefSchema }),
-        prompt: `Generate today's AI Executive Brief for a 68-cover North Indian restaurant "${restaurant}" in India.
+        prompt: `You are SecondBite AI's brief writer for the restaurant "${data.restaurantName ?? "the venue"}" in India.
 Owner first name: ${owner}. Time of day: ${dayPart} IST.
 
-Realistic context:
-- Yesterday: ~180 covers, ₹94,000 revenue, avg rating 4.3, kitchen ticket 14m.
-- Trailing 7d: revenue ₹6.4L (+8% WoW), Zomato/Swiggy 34% of orders.
-- Known issues: paneer 1.2-day stock, tomato 0.8-day, Butter Chicken sweetness complaints, Friday FoH understaffed.
-- Today expected: 380–460 covers, peak 7–9:30 PM.
+You ONLY have review data. You have NO POS, NO revenue, NO inventory, NO staffing data. Do NOT invent any.
+
+Real metrics computed from the reviews table:
+${data.metricsSummary}
 
 Rules:
-- greeting: "Good ${dayPart}, ${owner}."
-- headline: one crisp sentence.
-- metrics: exactly 4 — Revenue (yesterday), Guest Satisfaction, Kitchen Speed, Staff Performance. Delta like "↑ 12%".
-- forecast.confidence: 70–90.
-- risks: 3 to 5 concrete operational risks with severity.
-- actions: 3 to 4 concrete owner actions today, with why, impact (₹/rating/time), effort, confidence 60–95.
-Amounts in ₹. Be specific and quantitative.`,
+- greeting: exactly "${greeting}".
+- headline: one crisp sentence grounded in the metrics above. If satisfaction dropped, say so. If complaints cluster on a tag, name it. No fabricated numbers.
+- actions: 2 to 4 concrete owner actions that ONLY use review data. Examples: reply to low-rated reviews, investigate a specific complaint tag, thank redeemed-reward guests. NEVER suggest inventory, staffing, revenue, marketing spend, or forecasts.
+- Each action: title, why (cite the metric), impact (in rating points or review volume — NOT ₹), effort, confidence 60–95.`,
       });
-      return output;
+      return { ...output, greeting };
     } catch (error) {
       if (NoObjectGeneratedError.isInstance(error)) {
         try {
-          return BriefSchema.parse(JSON.parse(error.text ?? ""));
+          const parsed = BriefSchema.parse(JSON.parse(error.text ?? ""));
+          return { ...parsed, greeting };
         } catch {
-          return fallbackBrief(owner, restaurant, dayPart);
+          return neutral;
         }
       }
-      return fallbackBrief(owner, restaurant, dayPart);
+      return neutral;
     }
   });
