@@ -1,12 +1,14 @@
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
-import { Brain, LayoutDashboard, MessageSquare, Star, TrendingUp, Users, ChefHat, Package, Megaphone, Target, Activity, Lock, LogOut } from "lucide-react";
+import { Brain, LayoutDashboard, MessageSquare, Star, TrendingUp, Users, ChefHat, Package, Megaphone, Target, Activity, Lock, LogOut, Ticket } from "lucide-react";
 import { signOut } from "@/lib/auth";
 
 const MODULES = [
   { title: "Executive Brief", to: "/dashboard", icon: LayoutDashboard, ready: true },
   { title: "Restaurant Copilot", to: "/copilot", icon: Brain, ready: true },
   { title: "Review Intelligence", to: "/reviews", icon: Star, ready: true },
+  { title: "Coupon Verification", to: "/coupons", icon: Ticket, ready: true },
 ] as const;
+
 
 const COMING = [
   { title: "Demand Forecasting", icon: TrendingUp },

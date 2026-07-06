@@ -17,6 +17,7 @@ import { Route as ReviewRestaurantIdRouteImport } from './routes/review.$restaur
 import { Route as ApiCopilotRouteImport } from './routes/api/copilot'
 import { Route as AuthenticatedReviewsRouteImport } from './routes/_authenticated/reviews'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedCouponsRouteImport } from './routes/_authenticated/coupons'
 import { Route as AuthenticatedCopilotRouteImport } from './routes/_authenticated/copilot'
 
 const SignupRoute = SignupRouteImport.update({
@@ -58,6 +59,11 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedCouponsRoute = AuthenticatedCouponsRouteImport.update({
+  id: '/coupons',
+  path: '/coupons',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedCopilotRoute = AuthenticatedCopilotRouteImport.update({
   id: '/copilot',
   path: '/copilot',
@@ -69,6 +75,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
   '/copilot': typeof AuthenticatedCopilotRoute
+  '/coupons': typeof AuthenticatedCouponsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/reviews': typeof AuthenticatedReviewsRoute
   '/api/copilot': typeof ApiCopilotRoute
@@ -79,6 +86,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
   '/copilot': typeof AuthenticatedCopilotRoute
+  '/coupons': typeof AuthenticatedCouponsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/reviews': typeof AuthenticatedReviewsRoute
   '/api/copilot': typeof ApiCopilotRoute
@@ -91,6 +99,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/signup': typeof SignupRoute
   '/_authenticated/copilot': typeof AuthenticatedCopilotRoute
+  '/_authenticated/coupons': typeof AuthenticatedCouponsRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/reviews': typeof AuthenticatedReviewsRoute
   '/api/copilot': typeof ApiCopilotRoute
@@ -103,6 +112,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/signup'
     | '/copilot'
+    | '/coupons'
     | '/dashboard'
     | '/reviews'
     | '/api/copilot'
@@ -113,6 +123,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/signup'
     | '/copilot'
+    | '/coupons'
     | '/dashboard'
     | '/reviews'
     | '/api/copilot'
@@ -124,6 +135,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/signup'
     | '/_authenticated/copilot'
+    | '/_authenticated/coupons'
     | '/_authenticated/dashboard'
     | '/_authenticated/reviews'
     | '/api/copilot'
@@ -197,6 +209,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/coupons': {
+      id: '/_authenticated/coupons'
+      path: '/coupons'
+      fullPath: '/coupons'
+      preLoaderRoute: typeof AuthenticatedCouponsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/copilot': {
       id: '/_authenticated/copilot'
       path: '/copilot'
@@ -209,12 +228,14 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedCopilotRoute: typeof AuthenticatedCopilotRoute
+  AuthenticatedCouponsRoute: typeof AuthenticatedCouponsRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedReviewsRoute: typeof AuthenticatedReviewsRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedCopilotRoute: AuthenticatedCopilotRoute,
+  AuthenticatedCouponsRoute: AuthenticatedCouponsRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedReviewsRoute: AuthenticatedReviewsRoute,
 }
